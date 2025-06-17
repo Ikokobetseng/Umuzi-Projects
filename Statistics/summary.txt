@@ -1,0 +1,9 @@
+Descriptive stats:
+Mean age: 42.454
+Mean hours of screen time: 5.9736
+Proportion with internet access: 0.672
+Proportion with chronic condition: 0.492
+
+Key proportions:
+Probability of being over 30 and having internet access: 0.504
+Probability of being under 25 and not having a chronic
