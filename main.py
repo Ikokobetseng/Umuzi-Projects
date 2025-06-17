@@ -1,114 +1,59 @@
 import pandas as pd
-from ucimlrepo import fetch_ucirepo
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-import matplotlib.pyplot as plt
+import numpy as np
+from datetime import datetime
 
-# fetch dataset
-wholesale_customers = fetch_ucirepo(id=292)
+def load_data(file_path):
+    try:
+        data = pd.read_csv(file_path)
+        return data
+    except Exception as e:
+        print(f"Failed to load data: {e}")
+        return None
 
-# data (as pandas dataframes)
-X = wholesale_customers.data.features
-y = wholesale_customers.data.targets
+def clean_data(data):
+    # Normalize column names
+    data.columns = [col.lower().replace(' ', '_') for col in data.columns]
 
-# scale the data
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+    # Clean full_name and nationality
+    data['full_name'] = data['full_name'].str.strip().str.title()
+    data['nationality'] = data['nationality'].str.strip().str.title()
 
-# apply PCA
-pca = PCA()
-X_pca = pca.fit_transform(X_scaled)
+    # Standardize gender
+    gender_map = {
+        'male': 'Male', 'm': 'Male', 'man': 'Male', 'boy': 'Male',
+        'female': 'Female', 'f': 'Female', 'woman': 'Female', 'girl': 'Female'
+    }
+    data['gender'] = data['gender'].str.lower().map(gender_map).fillna('Other')
 
-# determine the number of components
-explained_variance = pca.explained_variance_ratio_
-cumulative_variance = explained_variance.cumsum()
-n_components = 0
-for i, var in enumerate(cumulative_variance):
-    if var >= 0.95:
-        n_components = i + 1
-        break
+    # Clean income
+    #data['income'] = data['income'].astype(str).str.replace('[^\d\.]', '', regex=True).astype(float)
+    data['income'] = data['income'].astype(str).str.replace(r'[^\d\.]', '', regex=True).astype(float)
 
-print(f'Number of components needed to capture 95% of the variance: {n_components}')
+    # Fix birth_date and calculate age
+    data['birth_date'] = pd.to_datetime(data['birth_date'], errors='coerce')
+    data['age'] = data['birth_date'].apply(lambda x: (datetime.today() - x).days / 365 if not pd.isnull(x) else np.nan)
 
-# plot the explained variance
-plt.figure(figsize=(8, 6))
-plt.plot(explained_variance, label='Explained Variance')
-plt.plot(cumulative_variance, label='Cumulative Variance')
-plt.xlabel('Principal Components')
-plt.ylabel('Variance')
-plt.title('Screen Plot')
-plt.legend()
-plt.show()
+    # Standardize is_employed
+    data['is_employed'] = data['is_employed'].astype(str).str.lower()
+    data['is_employed'] = data['is_employed'].map({
+        'yes': True, 'y': True, '1': True, 'true': True,
+        'no': False, 'n': False, '0': False, 'false': False
+    })
 
-# find the optimal number of clusters
-silhouette = []
-inertia = []
-for k in range(2, 11):
-    kmeans = KMeans(n_clusters=k)
-    kmeans.fit(X_pca[:, :n_components])
-    silhouette.append(silhouette_score(X_pca[:, :n_components], kmeans.labels_))
-    inertia.append(kmeans.inertia_)
+    # Drop duplicates and rows with missing values
+    data['email'] = data['email'].str.lower()
+    data = data.drop_duplicates(subset='email', keep='first')
+    critical_columns = ['email', 'birth_date', 'income']
+    data = data.dropna(subset=critical_columns)
 
-optimal_k = silhouette.index(max(silhouette)) + 2
-print(f'Optimal number of clusters: {optimal_k}')
+    return data
 
-# plot the silhouette score and inertia
-plt.figure(figsize=(8, 6))
-plt.plot(range(2, 11), silhouette, label='Silhouette Score')
-plt.xlabel('Number of Clusters')
-plt.ylabel('Silhouette Score')
-plt.title('Silhouette Score Plot')
-plt.legend()
-plt.show()
+def main():
+    file_path = 'https://raw.githubusercontent.com/Umuzi-org/data-wrangling-Ikokobetseng/refs/heads/main/data/wrangling_data.csv?token=GHSAT0AAAAAADFO3O4IIAGAMPPIMPPHOKX42CQRKEA'
+    data = load_data(file_path)
+    if data is not None:
+        cleaned_data = clean_data(data)
+        print(cleaned_data)
 
-plt.figure(figsize=(8, 6))
-plt.plot(range(2, 11), inertia, label='Inertia')
-plt.xlabel('Number of Clusters')
-plt.ylabel('Inertia')
-plt.title('Inertia Plot')
-plt.legend()
-plt.show()
-
-# create KMeans model with optimal number of clusters
-kmeans_raw = KMeans(n_clusters=optimal_k)
-kmeans_raw.fit(X_scaled)
-
-kmeans_pca = KMeans(n_clusters=optimal_k)
-kmeans_pca.fit(X_pca[:, :n_components])
-
-# evaluate the models
-silhouette_raw = silhouette_score(X_scaled, kmeans_raw.labels_)
-silhouette_pca = silhouette_score(X_pca[:, :n_components], kmeans_pca.labels_)
-
-print(f'Silhouette score on raw data: {silhouette_raw}')
-print(f'Silhouette score on PCA-reduced data: {silhouette_pca}')
-
-# visualize the clusters
-pca_2d = PCA(n_components=2)
-X_pca_2d = pca_2d.fit_transform(X_scaled)
-kmeans_2d = KMeans(n_clusters=optimal_k)
-kmeans_2d.fit(X_pca_2d)
-
-plt.figure(figsize=(8, 6))
-plt.scatter(X_pca_2d[:, 0], X_pca_2d[:, 1], c=kmeans_2d.labels_)
-plt.xlabel('PC1')
-plt.ylabel('PC2')
-plt.title('Cluster Visualization')
-plt.show()
-
-# examine the components
-print('PC1 is most strongly correlated with:')
-print(X.columns[abs(pca_2d.components_[0]).argsort()[::-1][:3]])
-
-print('PC2 is most strongly correlated with:')
-print(X.columns[abs(pca_2d.components_[1]).argsort()[::-1][:3]])
-
-# analyze the clusters
-for cluster in range(optimal_k):
-    cluster_data = X_scaled[kmeans_raw.labels_ == cluster]
-    print(f'Cluster {cluster} characteristics:')
-cluster_df = pd.DataFrame(cluster_data, columns=X.columns)
-print(f'Cluster {cluster} characteristics:')
-print(cluster_df.describe())
+if __name__ == "__main__":
+    main()
